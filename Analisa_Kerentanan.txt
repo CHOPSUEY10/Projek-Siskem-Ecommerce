@@ -1,0 +1,110 @@
+Berikut analisis kerentanan dari konfigurasi `development.py` Anda untuk tujuan pentesting:
+
+---
+
+### **Kerentanan yang Disengaja (Good for Pentesting Lab)**
+1. **Debug Mode Aktif**  
+   ```python
+   DEBUG = True  # Menampilkan stack trace lengkap (termasuk informasi sensitif)
+   ```
+   - ✅ **Untuk Pentesting**: Membocorkan struktur database, variabel environment, dan kode error.  
+   - ❌ **Production Risk**: Serangan information gathering.
+
+2. **Penggunaan SQLite tanpa Enkripsi**  
+   ```python
+   DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3'}}
+   ```
+   - ✅ **Untuk Pentesting**: Mudah diakses/dimodifikasi langsung via file.  
+   - ❌ **Production Risk**: Tidak ada proteksi data.
+
+3. **Email Console Backend**  
+   ```python
+   EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+   ```
+   - ✅ **Untuk Pentesting**: Memungkinkan penyerang melihat token verifikasi/password reset di log.  
+   - ❌ **Production Risk**: Tidak mengirim email nyata.
+
+4. **Debug Toolbar**  
+   ```python
+   MIDDLEWARE += ['debug_toolbar.middleware.DebugToolbarMiddleware']
+   ```
+   - ✅ **Untuk Pentesting**: Membocorkan query SQL, headers, dan request data.  
+   - ❌ **Production Risk**: Serangan SQL injection lebih mudah.
+
+---
+
+### **Kerentanan Tambahan yang Perlu Ditingkatkan (Untuk Lab Pentesting)**
+#### 1. **Kurangnya Proteksi CSRF**  
+   - Tambahkan ini untuk melemahkan keamanan:  
+     ```python
+     MIDDLEWARE.remove('django.middleware.csrf.CsrfViewMiddleware')  # Nonaktifkan CSRF
+     ```
+
+#### 2. **Password Hashing Lemah**  
+   - Ganti hasher default dengan MD5:  
+     ```python
+     PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
+     ```
+
+#### 3. **Session Security Dimatikan**  
+   - Tambahkan ini untuk session hijacking:  
+     ```python
+     SESSION_COOKIE_SECURE = False  # Cookie dikirim via HTTP
+     SESSION_COOKIE_HTTPONLY = False  # Bisa diakses via JavaScript
+     ```
+
+#### 4. **Allauth tanpa Verifikasi Email**  
+   - Nonaktifkan verifikasi email:  
+     ```python
+     ACCOUNT_EMAIL_VERIFICATION = 'none'  # Tidak butuh verifikasi email
+     ```
+
+#### 5. **Stripe Test Keys**  
+   ```python
+   STRIPE_PUBLIC_KEY = config('STRIPE_TEST_PUBLIC_KEY')  # Gunakan mode test
+   ```
+   - ✅ **Untuk Pentesting**: Transaksi dummy bisa diexploitasi.  
+
+---
+
+### **Vulnerability Checklist (Untuk Diretas)**
+| **Kerentanan**         | **Sudah Ada?** | **Keterangan**                     |
+|------------------------|----------------|-------------------------------------|
+| Debug Mode             | ✅ Ya          | Bocorkan informasi sensitif        |
+| SQL Injection Vector   | ❌ Tidak       | Tambahkan endpoint rentan SQLi     |
+| CSRF Disabled          | ❌ Tidak       | Nonaktifkan CSRF middleware        |
+| Weak Password Hashing  | ❌ Tidak       | Ganti dengan MD5                   |
+| Hardcoded Secrets      | ❌ Tidak       | Tambahkan kunci rahasia di kode    |
+| Unencrypted Database   | ✅ Ya (SQLite) | Data bisa diakses langsung         |
+| Exposed Error Messages | ✅ Ya          | Error detail ditampilkan           |
+
+---
+
+### **Rekomendasi untuk Membuat Lebih Rentan**
+1. **Tambahkan Endpoint SQL Injection**  
+   ```python
+   # urls.py
+   path('inject/', lambda r: HttpResponse(User.objects.raw(r.GET.get('q'))))
+   ```
+   - Contoh serangan: `/inject/?q=SELECT * FROM auth_user`.
+
+2. **Simpan Data Sensitif Plaintext**  
+   ```python
+   # models.py
+   class UserProfile(models.Model):
+       credit_card = models.CharField(max_length=16)  # Simpan kartu kredit tanpa enkripsi
+   ```
+
+3. **Gunakan TLS 1.0**  
+   ```python
+   SECURE_SSL_VERSION = "TLSv1"  # Protokol rentan
+   ```
+
+---
+
+### **Kesimpulan**
+- **Sudah cukup rentan** untuk dasar pentesting (debug mode, SQLite, debug toolbar).  
+- **Perlu ditambahkan** beberapa kerentanan sengaja (CSRF, SQLi, weak hashing) untuk simulasi serangan nyata.  
+- **Isolasi lingkungan** dari jaringan produksi!  
+
+> ⚠️ **Peringatan**: Jangan pernah deploy konfigurasi ini ke production! Hanya untuk lab terkontrol.
